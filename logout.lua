@@ -485,41 +485,25 @@ CreateCheckBox("Enable Double Jump", function(state)
     doubleJumpEnabled = state
 end)
 
--- Double jump logic as a function so it can be reconnected on respawn
-local function setupDoubleJump(humanoid)
-    -- Disconnect previous connections if any
-    if humanoid.__djStateConn then humanoid.__djStateConn:Disconnect() end
-    if humanoid.__djJumpConn then humanoid.__djJumpConn:Disconnect() end
+Humanoid.StateChanged:Connect(function(_, new)
+    if not doubleJumpEnabled then return end
+    if new == Enum.HumanoidStateType.Freefall then
+        canDoubleJump = true
+        hasDoubleJumped = false
+    elseif new == Enum.HumanoidStateType.Landed then
+        canDoubleJump = false
+        hasDoubleJumped = false
+    end
+end)
 
-    humanoid.__djStateConn = humanoid.StateChanged:Connect(function(_, new)
-        if not doubleJumpEnabled then return end
-        if new == Enum.HumanoidStateType.Freefall then
-            canDoubleJump = true
-            hasDoubleJumped = false
-        elseif new == Enum.HumanoidStateType.Landed then
-            canDoubleJump = false
-            hasDoubleJumped = false
-        end
-    end)
-
-    humanoid.__djJumpConn = UserInputService.JumpRequest:Connect(function()
-        if not doubleJumpEnabled then return end
-        if canDoubleJump and not hasDoubleJumped then
-            hasDoubleJumped = true
-            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            humanoid.UseJumpPower = true
-            humanoid.JumpPower = doubleJumpPower
-        end
-    end)
-end
-
-setupDoubleJump(Humanoid)
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-    Character = char
-    Humanoid = Character:WaitForChild("Humanoid")
-    speedBox.Text = tostring(Humanoid.WalkSpeed)
-    setupDoubleJump(Humanoid)
+UserInputService.JumpRequest:Connect(function()
+    if not doubleJumpEnabled then return end
+    if canDoubleJump and not hasDoubleJumped then
+        hasDoubleJumped = true
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        Humanoid.UseJumpPower = true
+        Humanoid.JumpPower = doubleJumpPower
+    end
 end)
 
 -- =========================
@@ -823,11 +807,6 @@ end
 MinBtn.MouseButton1Click:Connect(function()
     toggleMinimize(not minimized)
 end)
-
-UserInputService.InputBegan:Connect(function(input, gp)
-    if not gp and input.KeyCode == Enum.KeyCode.Y then
-        toggleMinimize(not minimized)
-    end
 
 UserInputService.InputBegan:Connect(function(input, gp)
     if not gp and input.KeyCode == Enum.KeyCode.Y then
