@@ -21,6 +21,22 @@ local doubleJumpPower = 50
 local selectedPlayer = nil
 local minimized = false
 
+-- Flying variables
+local flying = false
+local moveForward, moveBackward = false, false
+local moveLeft, moveRight = false, false
+local moveUp, moveDown = false, false
+local bodyGyro, bodyVelocity
+local FLY_SPEED = 50
+local FLY_ACCEL = 0.2 -- Lerp factor for smooth movement
+local TILT_ANGLE = 15 -- Degrees to tilt when turning
+
+-- Fly keybinds (default: Space for up, LeftShift for down, Q for up, Z for down)
+local flyUpKey = Enum.KeyCode.Space
+local flyDownKey = Enum.KeyCode.LeftShift
+local flyUpKeyAlt = Enum.KeyCode.Q
+local flyDownKeyAlt = Enum.KeyCode.Z
+
 -- Color scheme
 local colors = {
     background = Color3.fromRGB(30, 30, 40),
@@ -47,7 +63,7 @@ ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 -- Main container with shadow effect
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 380, 0, 520)
+MainFrame.Size = UDim2.new(0, 380, 0, 620) -- Increased height to accommodate flying controls
 MainFrame.Position = UDim2.new(0, 50, 0, 100)
 MainFrame.BackgroundColor3 = colors.background
 MainFrame.BorderSizePixel = 0
@@ -469,25 +485,229 @@ CreateCheckBox("Enable Double Jump", function(state)
     doubleJumpEnabled = state
 end)
 
-Humanoid.StateChanged:Connect(function(_, new)
-    if not doubleJumpEnabled then return end
-    if new == Enum.HumanoidStateType.Freefall then
-        canDoubleJump = true
-        hasDoubleJumped = false
-    elseif new == Enum.HumanoidStateType.Landed then
-        canDoubleJump = false
-        hasDoubleJumped = false
+-- Double jump logic as a function so it can be reconnected on respawn
+local function setupDoubleJump(humanoid)
+    -- Disconnect previous connections if any
+    if humanoid.__djStateConn then humanoid.__djStateConn:Disconnect() end
+    if humanoid.__djJumpConn then humanoid.__djJumpConn:Disconnect() end
+
+    humanoid.__djStateConn = humanoid.StateChanged:Connect(function(_, new)
+        if not doubleJumpEnabled then return end
+        if new == Enum.HumanoidStateType.Freefall then
+            canDoubleJump = true
+            hasDoubleJumped = false
+        elseif new == Enum.HumanoidStateType.Landed then
+            canDoubleJump = false
+            hasDoubleJumped = false
+        end
+    end)
+
+    humanoid.__djJumpConn = UserInputService.JumpRequest:Connect(function()
+        if not doubleJumpEnabled then return end
+        if canDoubleJump and not hasDoubleJumped then
+            hasDoubleJumped = true
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            humanoid.UseJumpPower = true
+            humanoid.JumpPower = doubleJumpPower
+        end
+    end)
+end
+
+setupDoubleJump(Humanoid)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char
+    Humanoid = Character:WaitForChild("Humanoid")
+    speedBox.Text = tostring(Humanoid.WalkSpeed)
+    setupDoubleJump(Humanoid)
+end)
+
+-- =========================
+-- Flying Feature
+-- =========================
+CreateLabel("Flying")
+
+local flyCheckbox = CreateCheckBox("Enable Flying", function(state)
+    if state then
+        enableFly()
+    else
+        disableFly()
     end
 end)
 
-UserInputService.JumpRequest:Connect(function()
-    if not doubleJumpEnabled then return end
-    if canDoubleJump and not hasDoubleJumped then
-        hasDoubleJumped = true
-        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-        Humanoid.UseJumpPower = true
-        Humanoid.JumpPower = doubleJumpPower
+local flySpeedBox = CreateInputField("Enter fly speed...", tostring(FLY_SPEED))
+local applyFlySpeedBtn = CreateButton("Apply Fly Speed", function()
+    local val = tonumber(flySpeedBox.Text)
+    if val then
+        FLY_SPEED = val
+        flySpeedBox.Text = tostring(val)
+    else
+        flySpeedBox.Text = "Invalid number!"
+        task.wait(1)
+        flySpeedBox.Text = tostring(FLY_SPEED)
     end
+end)
+
+-- Add GUI for fly keybinds
+local flyKeyLabel = CreateLabel("Fly Keybinds")
+
+local flyUpInput = CreateInputField("Fly Up Key (default: Q)", "Q")
+local flyDownInput = CreateInputField("Fly Down Key (default: Z)", "Z")
+local setFlyKeysBtn = CreateButton("Set Fly Keys", function()
+    local upKey = flyUpInput.Text:upper()
+    local downKey = flyDownInput.Text:upper()
+    if Enum.KeyCode[upKey] and Enum.KeyCode[downKey] then
+        flyUpKeyAlt = Enum.KeyCode[upKey]
+        flyDownKeyAlt = Enum.KeyCode[downKey]
+        flyUpInput.Text = upKey
+        flyDownInput.Text = downKey
+    else
+        flyUpInput.Text = "Invalid!"
+        flyDownInput.Text = "Invalid!"
+        task.wait(1)
+        flyUpInput.Text = "Q"
+        flyDownInput.Text = "Z"
+        flyUpKeyAlt = Enum.KeyCode.Q
+        flyDownKeyAlt = Enum.KeyCode.Z
+    end
+end)
+
+-- Enable flying
+function enableFly()
+    if flying then return end
+    flying = true
+    
+    -- Update checkbox visually
+    local checkMark = flyCheckbox:FindFirstChildWhichIsA("Frame"):FindFirstChildWhichIsA("ImageLabel")
+    if checkMark then
+        checkMark.Visible = true
+        TweenService:Create(flyCheckbox, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 70, 100)}):Play()
+    end
+    
+    if not Character then return end
+    local hrp = Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    Humanoid.PlatformStand = true
+
+    -- Create BodyGyro
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.P = 5000
+    bodyGyro.D = 1000
+    bodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
+    bodyGyro.CFrame = hrp.CFrame
+    bodyGyro.Parent = hrp
+
+    -- Create BodyVelocity
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
+    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    bodyVelocity.Parent = hrp
+
+    -- Flight loop
+    local flyConnection
+    flyConnection = RunService.Heartbeat:Connect(function(delta)
+        if not flying then 
+            flyConnection:Disconnect()
+            return 
+        end
+
+        -- Calculate movement direction
+        local direction = Vector3.new()
+        local cam = workspace.CurrentCamera
+        if moveForward then direction += cam.CFrame.LookVector end
+        if moveBackward then direction -= cam.CFrame.LookVector end
+        if moveLeft then direction -= cam.CFrame.RightVector end
+        if moveRight then direction += cam.CFrame.RightVector end
+        if moveUp then direction += Vector3.new(0,1,0) end
+        if moveDown then direction -= Vector3.new(0,1,0) end
+
+        if direction.Magnitude > 0 then
+            direction = direction.Unit
+        end
+
+        -- Smoothly interpolate velocity
+        if bodyVelocity then
+            bodyVelocity.Velocity = bodyVelocity.Velocity:Lerp(direction * FLY_SPEED, FLY_ACCEL)
+        end
+
+        -- Apply tilt for turning
+        if bodyGyro then
+            local tilt = (moveRight and 1 or 0) - (moveLeft and 1 or 0)
+            local baseCFrame = CFrame.new(hrp.Position, hrp.Position + cam.CFrame.LookVector)
+            bodyGyro.CFrame = baseCFrame * CFrame.Angles(0, 0, math.rad(-tilt * TILT_ANGLE))
+        end
+    end)
+end
+
+-- Disable flying
+function disableFly()
+    if not flying then return end
+    flying = false
+    
+    -- Update checkbox visually
+    local checkMark = flyCheckbox:FindFirstChildWhichIsA("Frame"):FindFirstChildWhichIsA("ImageLabel")
+    if checkMark then
+        checkMark.Visible = false
+        TweenService:Create(flyCheckbox, TweenInfo.new(0.2), {BackgroundColor3 = colors.button}):Play()
+    end
+    
+    Humanoid.PlatformStand = false
+
+    if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
+    if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
+end
+
+-- Handle key press for flying
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.W then moveForward = true
+    elseif input.KeyCode == Enum.KeyCode.S then moveBackward = true
+    elseif input.KeyCode == Enum.KeyCode.A then moveLeft = true
+    elseif input.KeyCode == Enum.KeyCode.D then moveRight = true
+    elseif input.KeyCode == flyUpKey or input.KeyCode == flyUpKeyAlt then moveUp = true
+    elseif input.KeyCode == flyDownKey or input.KeyCode == flyDownKeyAlt then moveDown = true
+    elseif input.KeyCode == Enum.KeyCode.F then
+        if flying then 
+            disableFly() 
+        else 
+            enableFly() 
+        end
+    end
+end)
+
+-- Handle key release for flying
+UserInputService.InputEnded:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.W then moveForward = false
+    elseif input.KeyCode == Enum.KeyCode.S then moveBackward = false
+    elseif input.KeyCode == Enum.KeyCode.A then moveLeft = false
+    elseif input.KeyCode == Enum.KeyCode.D then moveRight = false
+    elseif input.KeyCode == flyUpKey or input.KeyCode == flyUpKeyAlt then moveUp = false
+    elseif input.KeyCode == flyDownKey or input.KeyCode == flyDownKeyAlt then moveDown = false
+    end
+end)
+
+-- Clean up flying on death
+Humanoid.Died:Connect(function()
+    disableFly()
+end)
+
+-- Reinitialize flying when character respawns
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char
+    Humanoid = Character:WaitForChild("Humanoid")
+    
+    -- Reapply flying if it was enabled
+    if flying then
+        task.wait(0.5) -- Wait for character to fully load
+        enableFly()
+    end
+    
+    -- Reconnect death event
+    Humanoid.Died:Connect(function()
+        disableFly()
+    end)
 end)
 
 -- =========================
@@ -603,6 +823,11 @@ end
 MinBtn.MouseButton1Click:Connect(function()
     toggleMinimize(not minimized)
 end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode == Enum.KeyCode.Y then
+        toggleMinimize(not minimized)
+    end
 
 UserInputService.InputBegan:Connect(function(input, gp)
     if not gp and input.KeyCode == Enum.KeyCode.Y then
