@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════╗
--- ║         Lumina Hub  –  UI.lua        ║
+-- ║         NMC PATHAN  –  UI.lua        ║
 -- ╚══════════════════════════════════════╝
 
 local Players         = game:GetService("Players")
@@ -84,6 +84,9 @@ local function cleanupEverything()
     -- Cleanup hitboxes
     stopHitboxLoop()
     resetAllHitboxes()
+    
+    -- Cleanup noclip
+    stopNoclip()
     
     -- Remove the cleanup function from getgenv
     getgenv()[scriptFlag] = nil
@@ -227,9 +230,11 @@ end)
 -- ───────────────────────────────────────
 --  Panel Sizes
 -- ───────────────────────────────────────
-local PANEL_W    = 340 * scale
-local PANEL_H    = 520 * scale
-local TOPBAR_H   = 50  * scale
+local PANEL_W        = 340 * scale
+local PANEL_H        = 520 * scale
+local PANEL_HORIZ_W  = 520 * scale
+local PANEL_HORIZ_H  = 340 * scale
+local TOPBAR_H       = 50  * scale
 
 -- ───────────────────────────────────────
 --  Keybind Registry & Listener System
@@ -354,7 +359,7 @@ function LuminaHub:CreateWindow(titleText)
     panelTitle.Size               = UDim2.new(1, -120 * scale, 1, 0)
     panelTitle.Position           = UDim2.new(0, 20 * scale, 0, 0)
     panelTitle.BackgroundTransparency = 1
-    panelTitle.Text               = titleText or "✦  Lumina Hub"
+    panelTitle.Text               = titleText or "NMC PATHAN"
     panelTitle.TextColor3         = COL_WHITE
     panelTitle.TextSize           = 18 * scale
     panelTitle.Font               = Enum.Font.GothamBold
@@ -363,6 +368,25 @@ function LuminaHub:CreateWindow(titleText)
     panelTitle.Parent             = topBar
     addGradient(panelTitle)
 
+    -- Resize Button (Vertical ↔ Horizontal)
+    local resizeBtn = Instance.new("TextButton")
+    resizeBtn.Name                   = "ResizeBtn"
+    resizeBtn.Size                   = UDim2.new(0, 24 * scale, 0, 24 * scale)
+    resizeBtn.Position               = UDim2.new(1, -90 * scale, 0.5, 0)
+    resizeBtn.AnchorPoint            = Vector2.new(0.5, 0.5)
+    resizeBtn.BackgroundColor3       = Color3.fromRGB(138, 43, 226)
+    resizeBtn.BackgroundTransparency = 0.2
+    resizeBtn.BorderSizePixel        = 0
+    resizeBtn.Text                   = "⇌"
+    resizeBtn.TextColor3             = COL_WHITE
+    resizeBtn.TextSize               = 14 * scale
+    resizeBtn.Font                   = Enum.Font.GothamBold
+    resizeBtn.ZIndex                 = 12
+    resizeBtn.AutoButtonColor        = false
+    resizeBtn.Active                 = true
+    resizeBtn.Parent                 = topBar
+    corner(resizeBtn, 12)
+    
     -- Minimize Button
     local minimizeBtn = Instance.new("TextButton")
     minimizeBtn.Name                   = "MinimizeBtn"
@@ -700,6 +724,7 @@ function LuminaHub:CreateWindow(titleText)
     local mainPanelOpen  = false
     local isMinimized    = false
     local isTransitioning = false
+    local isHorizontal   = false -- false = vertical, true = horizontal
     local activeTweens   = {}
 
     local function cancelTweens()
@@ -734,16 +759,18 @@ function LuminaHub:CreateWindow(titleText)
             end
         end
 
+        local targetW = isHorizontal and PANEL_HORIZ_W or PANEL_W
+        local targetH = isHorizontal and PANEL_HORIZ_H or PANEL_H
         if instant then
-            panel.Size                   = UDim2.new(0, PANEL_W, 0, PANEL_H)
+            panel.Size                   = UDim2.new(0, targetW, 0, targetH)
             panel.BackgroundTransparency = 0.6
             return
         end
 
         isTransitioning  = true
-        panel.Size       = UDim2.new(0, PANEL_W * 0.8, 0, TOPBAR_H)
+        panel.Size       = UDim2.new(0, targetW * 0.8, 0, TOPBAR_H)
         playPanelTween(
-            { Size = UDim2.new(0, PANEL_W, 0, PANEL_H), BackgroundTransparency = 0.6 },
+            { Size = UDim2.new(0, targetW, 0, targetH), BackgroundTransparency = 0.6 },
             0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out,
             function() isTransitioning = false end
         )
@@ -754,8 +781,9 @@ function LuminaHub:CreateWindow(titleText)
         mainPanelOpen   = false
         isMinimized     = false
         isTransitioning = true
+        local targetW = isHorizontal and PANEL_HORIZ_W or PANEL_W
         playPanelTween(
-            { Size = UDim2.new(0, PANEL_W * 0.8, 0, TOPBAR_H), BackgroundTransparency = 1 },
+            { Size = UDim2.new(0, targetW * 0.8, 0, TOPBAR_H), BackgroundTransparency = 1 },
             0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In,
             function()
                 panel.Visible   = false
@@ -768,8 +796,9 @@ function LuminaHub:CreateWindow(titleText)
         if isTransitioning or not mainPanelOpen or isMinimized then return end
         isMinimized     = true
         isTransitioning = true
+        local targetW = isHorizontal and PANEL_HORIZ_W or PANEL_W
         playPanelTween(
-            { Size = UDim2.new(0, PANEL_W, 0, TOPBAR_H) },
+            { Size = UDim2.new(0, targetW, 0, TOPBAR_H) },
             0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In,
             function() isTransitioning = false end
         )
@@ -779,9 +808,50 @@ function LuminaHub:CreateWindow(titleText)
         if isTransitioning or not mainPanelOpen or not isMinimized then return end
         isMinimized     = false
         isTransitioning = true
+        local targetW = isHorizontal and PANEL_HORIZ_W or PANEL_W
+        local targetH = isHorizontal and PANEL_HORIZ_H or PANEL_H
         playPanelTween(
-            { Size = UDim2.new(0, PANEL_W, 0, PANEL_H), BackgroundTransparency = 0.6 },
+            { Size = UDim2.new(0, targetW, 0, targetH), BackgroundTransparency = 0.6 },
             0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out,
+            function() isTransitioning = false end
+        )
+    end
+    
+    local function togglePanelOrientation()
+        if isTransitioning or not mainPanelOpen then return end
+        isTransitioning = true
+        isHorizontal = not isHorizontal
+        
+        local targetW, targetH
+        if isHorizontal then
+            targetW = PANEL_HORIZ_W
+            targetH = PANEL_HORIZ_H
+        else
+            targetW = PANEL_W
+            targetH = PANEL_H
+        end
+        
+        -- Keep centered
+        local currentSize = panel.AbsoluteSize
+        local targetSize = Vector2.new(targetW, targetH)
+        local vp = camera.ViewportSize
+        local newX = math.clamp(
+            panel.AbsolutePosition.X + (currentSize.X - targetSize.X)/2, 
+            0, 
+            math.max(0, vp.X - targetSize.X)
+        )
+        local newY = math.clamp(
+            panel.AbsolutePosition.Y + (currentSize.Y - targetSize.Y)/2, 
+            0, 
+            math.max(0, vp.Y - targetSize.Y)
+        )
+        
+        playPanelTween(
+            { 
+                Size = UDim2.new(0, targetW, 0, targetH),
+                Position = UDim2.new(0, newX, 0, newY)
+            },
+            0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out,
             function() isTransitioning = false end
         )
     end
@@ -792,6 +862,10 @@ function LuminaHub:CreateWindow(titleText)
 
     minimizeBtn.MouseButton1Click:Connect(function()
         if isMinimized then maximizePanel() else minimizePanel() end
+    end)
+    
+    resizeBtn.MouseButton1Click:Connect(function()
+        togglePanelOrientation()
     end)
 
     closeBtn.MouseButton1Click:Connect(function()
@@ -1563,22 +1637,35 @@ local hitboxSettings = {
 }
 local hitboxConnections = {}
 
+-- Noclip Settings
+local noclipSettings = {
+    enabled = false
+}
+local noclipConnection = nil
+local clipActive = true
+
 -- Hitbox Functions
 local function startHitboxLoop()
-    local loopConn = RunService.RenderStepped:Connect(function()
+    local loopConn = RunService.Heartbeat:Connect(function()
+        -- Cache settings to avoid repeated lookups
+        local cachedSize = tonumber(hitboxSettings.size) or 5
+        local cachedTransparency = tonumber(hitboxSettings.transparency) or 0.9
+        local cachedRed = tonumber(hitboxSettings.red) or 1
+        local cachedGreen = tonumber(hitboxSettings.green) or 0
+        local cachedBlue = tonumber(hitboxSettings.blue) or 0
+        local color = Color3.new(cachedRed, cachedGreen, cachedBlue)
+        local sizeVec = Vector3.new(cachedSize, cachedSize, cachedSize)
         for _, v in pairs(game:GetService("Players"):GetPlayers()) do
-            if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                local hrp = v.Character.HumanoidRootPart
-                local size = tonumber(hitboxSettings.size) or 5
-                hrp.Size = Vector3.new(size, size, size)
-                hrp.Transparency = tonumber(hitboxSettings.transparency) or 0.9
-                hrp.Color = Color3.new(
-                    tonumber(hitboxSettings.red) or 1,
-                    tonumber(hitboxSettings.green) or 0,
-                    tonumber(hitboxSettings.blue) or 0
-                )
-                hrp.Material = Enum.Material.Neon
-                hrp.CanCollide = false
+            if v ~= player and v.Character then
+                local hrp = v.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    -- Only update properties if they've changed to reduce property writes
+                    if hrp.Size ~= sizeVec then hrp.Size = sizeVec end
+                    if hrp.Transparency ~= cachedTransparency then hrp.Transparency = cachedTransparency end
+                    if hrp.Color ~= color then hrp.Color = color end
+                    if hrp.Material ~= Enum.Material.Neon then hrp.Material = Enum.Material.Neon end
+                    if hrp.CanCollide ~= false then hrp.CanCollide = false end
+                end
             end
         end
     end)
@@ -1601,6 +1688,36 @@ local function resetAllHitboxes()
             hrp.Transparency = 1 -- Original is invisible
             hrp.Material = Enum.Material.Plastic
             hrp.CanCollide = true
+        end
+    end
+end
+
+-- Noclip Functions
+local function startNoclip()
+    clipActive = false
+    noclipConnection = RunService.Stepped:Connect(function()
+        if not clipActive and player.Character then
+            for _, v in pairs(player.Character:GetDescendants()) do
+                if v:IsA('BasePart') and v.CanCollide then
+                    v.CanCollide = false
+                end
+            end
+        end
+        task.wait(0.21)
+    end)
+end
+
+local function stopNoclip()
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+    clipActive = true
+    if player.Character then
+        for _, v in pairs(player.Character:GetDescendants()) do
+            if v:IsA('BasePart') then
+                v.CanCollide = true
+            end
         end
     end
 end
@@ -1684,7 +1801,7 @@ end
 --  USER CONFIGURATION & SCRIPTS
 -- ───────────────────────────────────────
 
-local Window = LuminaHub:CreateWindow("✦  Lumina Hub")
+local Window = LuminaHub:CreateWindow("NMC PATHAN")
 
 -- Tabs
 local HitboxTab = Window:CreateTab("Hitbox")
@@ -1695,6 +1812,19 @@ VisualTab:CreateSection("ESP / Visuals")
 
 local PlayerTab = Window:CreateTab("Player")
 PlayerTab:CreateSection("Player Scripts")
+
+local NoclipToggle = PlayerTab:CreateToggle({
+    Name = "Noclip",
+    Default = false,
+    Callback = function(state)
+        noclipSettings.enabled = state
+        if state then
+            startNoclip()
+        else
+            stopNoclip()
+        end
+    end
+})
 
 -- ───────────────────────────────────────
 --  HITBOX TAB
@@ -1715,9 +1845,7 @@ local HitboxToggle = HitboxTab:CreateToggle({
     end
 })
 
-HitboxToggle:CreateSection("Hitbox Settings")
-
-local HitboxSizeSlider = HitboxToggle:CreateSlider({
+local HitboxSizeSlider = HitboxTab:CreateSlider({
     Name = "Hitbox Size",
     Min = 1,
     Max = 50,
@@ -1727,7 +1855,24 @@ local HitboxSizeSlider = HitboxToggle:CreateSlider({
     end
 })
 
-local HitboxRedSlider = HitboxToggle:CreateSlider({
+local HitboxTransparencySlider = HitboxTab:CreateSlider({
+    Name = "Hitbox Transparency",
+    Min = 0,
+    Max = 1,
+    Default = hitboxSettings.transparency,
+    Precision = 2,
+    Callback = function(value)
+        hitboxSettings.transparency = value
+    end
+})
+
+local ColorToggle = HitboxTab:CreateToggle({
+    Name = "Hitbox Color",
+    Default = false,
+    Callback = function() end
+})
+
+local HitboxRedSlider = ColorToggle:CreateSlider({
     Name = "Red",
     Min = 0,
     Max = 1,
@@ -1738,7 +1883,7 @@ local HitboxRedSlider = HitboxToggle:CreateSlider({
     end
 })
 
-local HitboxGreenSlider = HitboxToggle:CreateSlider({
+local HitboxGreenSlider = ColorToggle:CreateSlider({
     Name = "Green",
     Min = 0,
     Max = 1,
@@ -1749,7 +1894,7 @@ local HitboxGreenSlider = HitboxToggle:CreateSlider({
     end
 })
 
-local HitboxBlueSlider = HitboxToggle:CreateSlider({
+local HitboxBlueSlider = ColorToggle:CreateSlider({
     Name = "Blue",
     Min = 0,
     Max = 1,
@@ -1757,17 +1902,6 @@ local HitboxBlueSlider = HitboxToggle:CreateSlider({
     Precision = 2,
     Callback = function(value)
         hitboxSettings.blue = value
-    end
-})
-
-local HitboxTransparencySlider = HitboxToggle:CreateSlider({
-    Name = "Transparency",
-    Min = 0,
-    Max = 1,
-    Default = hitboxSettings.transparency,
-    Precision = 2,
-    Callback = function(value)
-        hitboxSettings.transparency = value
     end
 })
 
@@ -1876,8 +2010,8 @@ end
 local InvisToggle = MiscTab:CreateToggle({
     Name = "Invisible",
     Default = false,
-    Description = "When invisible, only knife will work. Guns will NOT work.",
-    DescColor = Color3.fromRGB(220, 50, 50), -- Customizable Description Color (Red caution)
+    Description = "When invisible, only knifeThrow will work. Guns will NOT work.",
+    DescColor = Color3.fromRGB(220, 10, 10), -- Customizable Description Color (Red caution)
     Callback = function(state)
         toolInvisible = state
         if state then
